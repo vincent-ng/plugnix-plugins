@@ -89,11 +89,13 @@ export default function registerUserPlugin({ registerMenuItem, registerRoute, re
   registerRoute({
     path: '/admin/users/create',
     component: CreateUserPage,
+    layout: 'admin',
   });
 
   registerRoute({
     path: '/admin/users/:id',
     component: UserDetailPage,
+    layout: 'admin',
   });
 
 }

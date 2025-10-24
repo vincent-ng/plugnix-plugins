@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuthentication } from "@/framework/contexts/AuthenticationContext.jsx";
 import { LoginForm } from '../components/LoginForm.jsx';
@@ -7,7 +6,6 @@ import { LoginForm } from '../components/LoginForm.jsx';
 const LoginPage = () => {
   const { t } = useTranslation('auth');
   const { signIn } = useAuthentication();
-  const navigate = useNavigate();
   const [formData, setFormData] = useState({
     email: '',
     password: ''
@@ -30,12 +28,10 @@ const LoginPage = () => {
     try {
       const { error } = await signIn(formData.email, formData.password);
       if (error) {
-        setError(error.message);
-      } else {
-        navigate('/admin');
+        throw error;
       }
     } catch (err) {
-      setError(t('loginFailed'));
+      setError(err.message || t('loginFailed'));
     } finally {
       setLoading(false);
     }

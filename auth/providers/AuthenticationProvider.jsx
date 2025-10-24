@@ -21,10 +21,10 @@ export const AuthenticationProvider = ({ children }) => {
         setUser(currentUser => {
           if (currentUser?.id !== newUser?.id) {
             // 发送认证状态变化事件
-            eventBus.emit(AUTH_STATE_CHANGED, { 
-              user: newUser, 
+            eventBus.emit('auth', AUTH_STATE_CHANGED, {
+              user: newUser,
               event: _event,
-              session 
+              session
             });
             return newUser;
           }
@@ -127,7 +127,7 @@ export const AuthenticationProvider = ({ children }) => {
 
   // 从事件总线监听登出事件，这个事件暂时还没有插件或框架调用，先留着
   useEffect(() => {
-    const unsubscribe = eventBus.on(AUTH_LOGOUT, () => {
+    const unsubscribe = eventBus.on('auth', AUTH_LOGOUT, () => {
       logout();
     });
 

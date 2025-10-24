@@ -15,7 +15,7 @@ export const NotificationProvider = ({ children }) => {
 
   // 监听新通知事件
   useEffect(() => {
-    const unsubscribe = eventBus.on('notification:new', (notification) => {
+    const unsubscribe = eventBus.on('notifications', 'notification:new', (notification) => {
       // 如果没有提供ID，则生成一个
       const notificationWithId = {
         id: notification.id || generateId(),
@@ -72,7 +72,7 @@ export const NotificationProvider = ({ children }) => {
   // 触发通知操作事件
   const triggerAction = (action) => {
     if (action && action.event) {
-      eventBus.emit(action.event, action.payload || {});
+      eventBus.emit('notifications', action.event, action.payload || {});
     }
   };
 

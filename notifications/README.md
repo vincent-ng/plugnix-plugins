@@ -19,7 +19,7 @@
 import eventBus from '@/framework/lib/eventBus';
 
 // 发送一个基本通知
-eventBus.emit('notification:new', {
+eventBus.emit('tenant', 'notification:new', {
   level: 'info',
   source: 'tenant',
   title: 'notifications:tenant.addedToOrg.title',
@@ -27,7 +27,7 @@ eventBus.emit('notification:new', {
 });
 
 // 发送一个带有操作按钮的通知
-eventBus.emit('notification:new', {
+eventBus.emit('permission', 'notification:new', {
   level: 'warning',
   source: 'permission',
   title: 'notifications:permission.roleChanged.title',
@@ -58,7 +58,7 @@ eventBus.emit('notification:new', {
 ```javascript
 // 在某个 React 组件中
 useEffect(() => {
-  const unsubscribe = eventBus.on('tenant:view-tenant-details', (payload) => {
+  const unsubscribe = eventBus.on('tenant', 'tenant:view-tenant-details', (payload) => {
     // 跳转到组织详情页
     navigate(`/admin/ts/${payload.tId}`);
   });

@@ -35,6 +35,7 @@ export default function registerAuthModule({ registerI18nNamespace, registerMenu
   
   // 注册登出菜单项
   registerMenuItem({
+    key: 'auth:common.signOut',
     label: 'auth:common.signOut',
     icon: 'LogOut',
     menuItemComponent: SignOutMenuItem,

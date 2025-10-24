@@ -61,7 +61,8 @@
       registerRoute({
         path: '/admin/permissions',
         component: PermissionAdminPage,
-        permissions: [pagePermission]
+        permissions: [pagePermission],
+        layout: 'admin',
       });
 
       // 4. 声明管理操作所需的后端DB权限（用于按钮、具体操作等）
@@ -165,3 +166,42 @@ async function createTenant(name, description) {
 *   `db.tenant_permissions.select`, `db.tenant_permissions.insert`, `db.tenant_permissions.delete`
 
 这些权限应在系统初始化时被赋予超级管理员角色。
+
+
+#### **7. 首次部署：创建第一个管理员**
+
+本框架的权限系统依赖一个特殊的"系统组"和"Admin"角色来识别管理员。要让第一个用户成为系统管理员，需要一个一次性的手动引导（Bootstrapping）过程。
+
+**前提：**
+
+1.  您已经将项目连接到 Supabase 后端。
+2.  您已经在 Supabase 的 SQL Editor 中执行了 `docs/design/database-initialization.sql` 脚本。
+
+**操作步骤：**
+
+1.  **获取您的用户ID (User ID)**
+    *   通过您的应用注册并登录，以在 Supabase 中创建用户记录。
+    *   访问 Supabase 后台的 **Authentication** > **Users** 页面。
+    *   找到您的用户记录，并复制其 `ID`（一个UUID格式的字符串）。
+
+2. **创建第一个管理员**
+
+   框架初始化后，你需要一个管理员账户来管理系统。请按照以下步骤操作：
+
+   - **注册一个用户**：通过你的应用前端正常注册一个新用户。
+   - **提升为管理员**：在 Supabase SQL 编辑器中执行以下命令，将你刚刚注册的用户提升为管理员。你也可以不指定用户ID，函数会自动将系统中的第一个用户提升为管理员。
+
+     ```sql
+     -- 将 'YOUR_USER_ID' 替换为你的用户ID，或直接运行以自动选择第一个用户
+     SELECT promote_user_to_admin('YOUR_USER_ID');
+     ```
+
+     或者，如果你想让函数自动选择第一个注册的用户：
+
+     ```sql
+      -- 函数会自动找到第一个用户并将其提升为管理员
+      SELECT promote_user_to_admin();
+      ```
+
+---
+

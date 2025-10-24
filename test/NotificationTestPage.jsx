@@ -27,7 +27,7 @@ const NotificationTestPage = () => {
     };
 
     // 订阅事件
-    const unsubscribe = eventBus.on('test:view-details', handleViewDetails);
+    const unsubscribe = eventBus.on('test', 'test:view-details', handleViewDetails);
 
     // 清理函数，组件卸载时取消订阅
     return () => {
@@ -60,33 +60,33 @@ const NotificationTestPage = () => {
       ];
     }
 
-    eventBus.emit('notification:new', payload);
+    eventBus.emit('test', 'notification:new', payload);
   };
 
   const sendMultipleNotifications = () => {
     // 发送不同类型的通知
-    eventBus.emit('notification:new', {
+    eventBus.emit('test', 'notification:new', {
       level: 'info',
       source: 'test',
       title: t('notificationTest.testNotifications.info.title'),
       message: t('notificationTest.testNotifications.info.message')
     });
 
-    eventBus.emit('notification:new', {
+    eventBus.emit('test', 'notification:new', {
       level: 'success',
       source: 'test',
       title: t('notificationTest.testNotifications.success.title'),
       message: t('notificationTest.testNotifications.success.message')
     });
 
-    eventBus.emit('notification:new', {
+    eventBus.emit('test', 'notification:new', {
       level: 'warning',
       source: 'test',
       title: t('notificationTest.testNotifications.warning.title'),
       message: t('notificationTest.testNotifications.warning.message')
     });
 
-    eventBus.emit('notification:new', {
+    eventBus.emit('test', 'notification:new', {
       level: 'error',
       source: 'test',
       title: t('notificationTest.testNotifications.error.title'),

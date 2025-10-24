@@ -14,7 +14,7 @@ export const useTenantProvider = () => {
 
   // 监听认证状态变化事件
   useEffect(() => {
-    const unsubscribeAuthChange = eventBus.on(AUTH_STATE_CHANGED, (data) => {
+    const unsubscribeAuthChange = eventBus.on('tenant', AUTH_STATE_CHANGED, (data) => {
       console.log('TenantContext received auth state change:', data);
       setUser(data.user);
     });
