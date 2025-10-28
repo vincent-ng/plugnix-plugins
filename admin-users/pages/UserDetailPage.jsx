@@ -4,61 +4,53 @@ import { useTranslation } from 'react-i18next';
 import { userAdminApi } from '../api/adminApi';
 
 const UserDetailPage = () => {
-  const { t } = useTranslation(['user', 'common']);
+  const { t } = useTranslation(['admin-users', 'common']);
   const { id } = useParams();
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [editing, setEditing] = useState(false);
   const [formData, setFormData] = useState({});
 
   useEffect(() => {
     const fetchUser = async () => {
-      try {
-        setLoading(true);
-        const { data, error } = await userAdminApi.getUserById(id);
+      setLoading(true);
+      // 直接获取数据，无需处理错误，因为框架的顶层已有错误捕获并显示到 toast
+      const data = await userAdminApi.getUserById(id);
 
-        if (error) {
-          throw error;
-        }
+      if (data) {
+        // Supabase返回的数据格式为 { user: {...} } 或直接是用户对象
+        // 根据API文档，getUserById返回的是 { user: {...} }
+        const userData = data.user || data;
 
-        if (data) {
-          const formattedUser = {
-            id: data.id,
-            name: data.user_metadata?.name || data.email.split('@')[0],
-            email: data.email,
-            role: data.user_metadata?.role || 'user',
-            status: data.email_confirmed_at ? 'active' : 'inactive',
-            createdAt: new Date(data.created_at).toLocaleDateString(),
-            lastLogin: data.last_sign_in_at ? new Date(data.last_sign_in_at).toLocaleString() : 'N/A',
-            phone: data.user_metadata?.phone || '',
-            department: data.user_metadata?.department || '',
-            bio: data.user_metadata?.bio || '',
-            ...data.user_metadata,
-          };
-          setUser(formattedUser);
-          setFormData({
-            name: formattedUser.name,
-            email: formattedUser.email,
-            role: formattedUser.role,
-            phone: formattedUser.phone,
-            department: formattedUser.department,
-            bio: formattedUser.bio,
-          });
-        } else {
-          setError(t('fetchFailed'));
-        }
-      } catch (err) {
-        setError(t('fetchFailed'));
-        console.error('Error fetching user:', err);
-      } finally {
-        setLoading(false);
+        const formattedUser = {
+          id: userData.id,
+          name: userData.user_metadata?.name || userData.email.split('@')[0],
+          email: userData.email,
+          role: userData.user_metadata?.role || 'user',
+          status: userData.email_confirmed_at ? 'active' : 'inactive',
+          createdAt: new Date(userData.created_at).toLocaleDateString(),
+          lastLogin: userData.last_sign_in_at ? new Date(userData.last_sign_in_at).toLocaleString() : 'N/A',
+          phone: userData.user_metadata?.phone || '',
+          department: userData.user_metadata?.department || '',
+          bio: userData.user_metadata?.bio || '',
+          ...userData.user_metadata,
+        };
+        setUser(formattedUser);
+        setFormData({
+          name: formattedUser.name,
+          email: formattedUser.email,
+          role: formattedUser.role,
+          phone: formattedUser.phone,
+          department: formattedUser.department,
+          bio: formattedUser.bio,
+        });
       }
+      setLoading(false);
     };
 
     fetchUser();
-  }, [id, t]);
+  }, [id]);
 
   const handleChange = (e) => {
     setFormData({
@@ -68,65 +60,39 @@ const UserDetailPage = () => {
   };
 
   const handleSave = async () => {
-    try {
-      const { data, error } = await userAdminApi.updateUserMetadata(id, {
-        name: formData.name,
-        role: formData.role,
-        phone: formData.phone,
-        department: formData.department,
-        bio: formData.bio,
-      });
+    await userAdminApi.updateUserMetadata(id, {
+      name: formData.name,
+      role: formData.role,
+      phone: formData.phone,
+      department: formData.department,
+      bio: formData.bio,
+    });
 
-      if (error) {
-        throw error;
-      }
-
-      if (data) {
-        const updatedUser = {
-          ...user,
-          ...formData,
-        };
-        setUser(updatedUser);
-        setEditing(false);
-      }
-    } catch (err) {
-      setError(t('updateFailed'));
-      console.error('Error updating user:', err);
-    }
+    const updatedUser = {
+      ...user,
+      ...formData,
+    };
+    setUser(updatedUser);
+    setEditing(false);
   };
 
   const handleDelete = async () => {
     if (window.confirm(t('confirmDelete'))) {
-      try {
-        const { error } = await userAdminApi.deleteUser(id);
-        if (error) {
-          throw error;
-        }
-        navigate('/admin/users');
-      } catch (err) {
-        setError(t('deleteFailed'));
-        console.error('Error deleting user:', err);
-      }
+      await userAdminApi.deleteUser(id);
+      navigate('/admin/users');
     }
   };
 
   const handleStatusToggle = async () => {
-    try {
-      const newStatus = user.status === 'active' ? 'inactive' : 'active';
-      // This is a simplified example. In a real app, you might need to
-      // call a server-side function to handle user status updates.
-      const { error } = await userAdminApi.updateUserMetadata(
-        id,
-        { status: newStatus }
-      );
+    const newStatus = user.status === 'active' ? 'inactive' : 'active';
+    // This is a simplified example. In a real app, you might need to
+    // call a server-side function to handle user status updates.
+    await userAdminApi.updateUserMetadata(
+      id,
+      { status: newStatus }
+    );
 
-      if (error) throw error;
-
-      setUser({ ...user, status: newStatus });
-    } catch (err) {
-      setError(t('statusUpdateFailed'));
-      console.error('Error updating user status:', err);
-    }
+    setUser({ ...user, status: newStatus });
   };
 
   if (loading) {
@@ -139,17 +105,17 @@ const UserDetailPage = () => {
     );
   }
 
-  if (error || !user) {
+  if (!user) {
     return (
       <div className="text-center py-12">
         <div className="text-destructive mb-4">
-          {error || '用户不存在'}
+          {t('userNotFound')}
         </div>
         <Link
           to="/admin/users"
           className="text-primary hover:text-primary/80"
         >
-          返回用户列表
+          {t('returnToUserList')}
         </Link>
       </div>
     );
@@ -163,7 +129,7 @@ const UserDetailPage = () => {
           to="/admin/users"
           className="text-primary hover:text-primary/80 text-sm"
         >
-          ← 返回用户列表
+          ← {t('returnToUserList')}
         </Link>
         <div className="flex space-x-2">
           {!editing ? (
@@ -176,13 +142,12 @@ const UserDetailPage = () => {
               </button>
               <button
                 onClick={handleStatusToggle}
-                className={`px-4 py-2 rounded-md text-sm font-medium ${
-                  user.status === 'active'
-                    ? 'bg-yellow-600 hover:bg-yellow-700 text-white'
-                    : 'bg-green-600 hover:bg-green-700 text-white'
-                }`}
+                className={`px-4 py-2 rounded-md text-sm font-medium ${user.status === 'active'
+                  ? 'bg-yellow-600 hover:bg-yellow-700 text-white'
+                  : 'bg-green-600 hover:bg-green-700 text-white'
+                  }`}
               >
-                {user.status === 'active' ? '停用' : '激活'}
+                {user.status === 'active' ? t('deactivate') : t('activate')}
               </button>
               <button
                 onClick={handleDelete}
@@ -210,12 +175,6 @@ const UserDetailPage = () => {
         </div>
       </div>
 
-      {error && (
-        <div className="bg-destructive/10 border border-destructive/20 text-destructive px-4 py-3 rounded">
-          {error}
-        </div>
-      )}
-
       {/* 用户信息 */}
       <div className="bg-card text-card-foreground shadow rounded-lg overflow-hidden">
         <div className="px-6 py-4 border-b border-border">
@@ -233,18 +192,16 @@ const UserDetailPage = () => {
                 {user.email}
               </p>
               <div className="mt-2 flex items-center space-x-4">
-                <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                  user.role === 'admin'
-                    ? 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200'
-                    : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
-                }`}>
+                <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${user.role === 'admin'
+                  ? 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200'
+                  : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
+                  }`}>
                   {user.role === 'admin' ? t('admin') : t('userRole')}
                 </span>
-                <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                  user.status === 'active'
-                    ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-                    : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
-                }`}>
+                <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${user.status === 'active'
+                  ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                  : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                  }`}>
                   {user.status === 'active' ? t('active') : t('inactive')}
                 </span>
               </div>
@@ -257,9 +214,9 @@ const UserDetailPage = () => {
             {/* 基本信息 */}
             <div className="space-y-4">
               <h3 className="text-lg font-medium text-foreground">
-                基本信息
+                {t('basicInfo')}
               </h3>
-              
+
               <div>
                 <label className="block text-sm font-medium text-muted-foreground mb-1">
                   {t('name')}
@@ -296,7 +253,7 @@ const UserDetailPage = () => {
 
               <div>
                 <label className="block text-sm font-medium text-muted-foreground mb-1">
-                  电话
+                  {t('phone')}
                 </label>
                 {editing ? (
                   <input
@@ -313,7 +270,7 @@ const UserDetailPage = () => {
 
               <div>
                 <label className="block text-sm font-medium text-muted-foreground mb-1">
-                  部门
+                  {t('department')}
                 </label>
                 {editing ? (
                   <input
@@ -332,9 +289,9 @@ const UserDetailPage = () => {
             {/* 系统信息 */}
             <div className="space-y-4">
               <h3 className="text-lg font-medium text-foreground">
-                系统信息
+                {t('systemInfo')}
               </h3>
-              
+
               <div>
                 <label className="block text-sm font-medium text-muted-foreground mb-1">
                   {t('role')}
@@ -372,7 +329,7 @@ const UserDetailPage = () => {
 
               <div>
                 <label className="block text-sm font-medium text-muted-foreground mb-1">
-                  个人简介
+                  {t('bio')}
                 </label>
                 {editing ? (
                   <textarea

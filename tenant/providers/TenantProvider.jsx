@@ -48,15 +48,21 @@ export const useTenantProvider = () => {
 
   // 切换当前组织
   const switchTenant = useCallback((tenant) => {
+    if (!tenant) {
+      // 如果传入null，则重置组织状态
+      resetTenant();
+      return;
+    }
+
     setCurrentTenant(tenant);
     setUserRole(tenant.role);
     setUserPermissions(tenant.permissions || []);
-    
+
     // 保存到 localStorage
     if (user?.id) {
       localStorage.setItem(`currentTenant_${user.id}`, tenant.id);
     }
-  }, [user]);
+  }, [user, resetTenant]);
 
   // 获取用户的组织列表
   const refreshUserTenants = useCallback(async () => {
@@ -67,7 +73,7 @@ export const useTenantProvider = () => {
       setUserTenants([]);
       return;
     }
-    
+
     setLoading(true);
     try {
       const { data, error } = await supabase

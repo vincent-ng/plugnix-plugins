@@ -1,6 +1,7 @@
 // 导入页面组件（已重命名为 Tenant*Page）
 import TenantRolesPage from './tenant-roles/pages/TenantRolesPage.jsx';
 import TenantUsersPage from './tenant-users/pages/TenantUsersPage.jsx';
+import TenantInfoPage from './tenant-info/pages/TenantInfoPage.jsx';
 
 // 导入组织Provider（使用框架契约）
 import { TenantProvider } from './providers/TenantProvider.jsx';
@@ -15,6 +16,8 @@ import zhRoles from './tenant-roles/i18n/zh.json';
 import enRoles from './tenant-roles/i18n/en.json';
 import zhUsers from './tenant-users/i18n/zh.json';
 import enUsers from './tenant-users/i18n/en.json';
+import zhInfo from './tenant-info/i18n/zh.json';
+import enInfo from './tenant-info/i18n/en.json';
 import zhTenant from './i18n/zh.json';
 import enTenant from './i18n/en.json';
 
@@ -31,6 +34,7 @@ export default function registerTenantPlugin({
   registerI18nNamespace('tenant', { zh: zhTenant, en: enTenant });
   registerI18nNamespace('tenant-roles', { zh: zhRoles, en: enRoles });
   registerI18nNamespace('tenant-users', { zh: zhUsers, en: enUsers });
+  registerI18nNamespace('tenant-info', { zh: zhInfo, en: enInfo });
 
   // 权限点声明
   registerPermission({ name: 'db.roles.select', description: 'permissions.db.roles.select' });
@@ -54,6 +58,14 @@ export default function registerTenantPlugin({
     order: 1,
     children: [
       {
+        key: 'tenant-info',
+        label: 'tenant-info:title',
+        path: '/admin/tenant-info',
+        component: TenantInfoPage,
+        icon: 'Building2',
+        order: 34,
+      },
+      {
         key: 'tenant-users',
         label: 'tenant-users:menu.title',
         path: '/admin/tenant-users',
@@ -71,6 +83,13 @@ export default function registerTenantPlugin({
       },
     ],
     position: 'admin'
+  });
+
+  registerRoute({
+    path: '/admin/tenant-info',
+    component: TenantInfoPage,
+    permissions: ['db.tenants.select'],
+    layout: 'admin'
   });
 
   registerRoute({

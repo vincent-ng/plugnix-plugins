@@ -51,89 +51,106 @@ $$ LANGUAGE plpgsql;
 -- SECTION 2: CORE PERMISSION FUNCTIONS
 -- =====================================================================================
 
--- Function to check if the current user has a system-level permission.
--- It checks if the user has the permission via the dedicated 'System' tenant.
-CREATE OR REPLACE FUNCTION check_permission(permission_name TEXT)
+-- 优雅的权限检查函数
+-- 简洁、明确、无冗余的设计
+
+-- 检查当前用户是否具有系统级权限
+CREATE OR REPLACE FUNCTION check_permission(p_permission_name TEXT)
 RETURNS BOOLEAN AS $$
 BEGIN
-  -- Delegate the check to the tenant permission function for the System tenant.
-  -- The `with_system_fallback=false` argument prevents it from recursively checking
-  -- system permissions again, thus avoiding an infinite loop.
-  RETURN check_tenant_permission(get_system_tenant_id(), permission_name, with_system_fallback := false);
+  RETURN check_tenant_permission(get_system_tenant_id(), p_permission_name, false);
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Function to check if the current user has a specific permission for a tenant,
--- either via tenant membership or a system-level permission (as a fallback).
--- This is the primary function for RLS policies.
+-- 检查指定用户是否具有系统级权限
+CREATE OR REPLACE FUNCTION user_has_system_permission(p_user_id UUID, p_permission_name TEXT)
+RETURNS BOOLEAN AS $$
+BEGIN
+  RETURN user_has_tenant_permission(p_user_id, get_system_tenant_id(), p_permission_name, false);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 检查当前用户是否具有租户权限（可选择是否回退到系统权限）
 CREATE OR REPLACE FUNCTION check_tenant_permission(p_tenant_id UUID, p_permission_name TEXT, with_system_fallback BOOLEAN DEFAULT true)
 RETURNS BOOLEAN AS $$
-DECLARE
-  v_has_permission BOOLEAN;
 BEGIN
-  -- 1. Check if the user has the permission directly within the specified tenant.
-  -- This query joins tenant membership, roles, and permissions.
+  RETURN user_has_tenant_permission(auth.uid(), p_tenant_id, p_permission_name, with_system_fallback);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 检查指定用户是否具有租户权限（可选择是否回退到系统权限）
+CREATE OR REPLACE FUNCTION user_has_tenant_permission(
+  p_user_id UUID,
+  p_tenant_id UUID,
+  p_permission_name TEXT,
+  p_fallback_to_system BOOLEAN DEFAULT true
+)
+RETURNS BOOLEAN AS $$
+DECLARE
+  has_perm BOOLEAN;
+BEGIN
+  -- 检查租户内权限
   SELECT EXISTS (
     SELECT 1
     FROM public.tenant_users tu
     JOIN public.role_permissions rp ON tu.role_id = rp.role_id
     JOIN public.permissions p ON rp.permission_id = p.id
-    WHERE tu.user_id = auth.uid()
+    WHERE tu.user_id = p_user_id
       AND tu.tenant_id = p_tenant_id
       AND p.name = p_permission_name
-  ) INTO v_has_permission;
+  ) INTO has_perm;
 
-  -- 2. If permission is found in the tenant, return true immediately.
-  IF v_has_permission THEN
-    RETURN TRUE;
+  -- 如果有租户权限或不需要回退到系统权限，直接返回结果
+  IF has_perm OR NOT p_fallback_to_system THEN
+    RETURN has_perm;
   END IF;
 
-  -- 3. If no permission was found in the tenant, and if fallback is enabled,
-  --    check for a system-level permission as an override.
-  IF with_system_fallback THEN
-    RETURN check_permission(p_permission_name);
-  END IF;
-
-  -- 4. If no fallback is checked, or if the system check fails, deny permission.
-  RETURN FALSE;
+  -- 回退到系统权限检查
+  RETURN user_has_system_permission(p_user_id, p_permission_name);
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Function to check if a user can grant a specific permission to a role.
--- This is a critical security function for the `role_permissions` table.
-CREATE OR REPLACE FUNCTION can_grant_permission(p_role_id UUID, p_permission_id UUID)
+-- 检查指定用户是否可以授予特定权限给角色
+CREATE OR REPLACE FUNCTION user_can_grant_permission(p_user_id UUID, p_role_id UUID, p_permission_id UUID)
 RETURNS BOOLEAN AS $$
 DECLARE
   v_tenant_id UUID;
   v_permission_name TEXT;
   v_is_system_permission BOOLEAN;
 BEGIN
-  -- 1. Get the tenant_id from the role.
+  -- 获取角色的tenant_id
   SELECT tenant_id INTO v_tenant_id
   FROM public.roles
   WHERE id = p_role_id;
 
-  -- 2. If the role is a global template (tenant_id is NULL), only a system admin can modify it.
+  -- 如果角色是全局模板（tenant_id为NULL），只有系统管理员可以修改
   IF v_tenant_id IS NULL THEN
-    RETURN check_permission('system.rpc.invoke');
+    RETURN user_has_system_permission(p_user_id, 'system.rpc.invoke');
   END IF;
 
-  -- 3. Get the name of the permission being granted.
+  -- 获取被授予权限的名称
   SELECT name INTO v_permission_name
   FROM public.permissions
   WHERE id = p_permission_id;
 
-  -- 4. Check if the permission is a "system" permission.
+  -- 检查是否为系统权限
   v_is_system_permission := v_permission_name LIKE 'system.%';
 
-  -- 5. If it's a system permission, the current user must be a system admin.
-  -- We check this by seeing if they have the 'system.rpc.invoke' permission.
+  -- 如果是系统权限，用户必须是系统管理员
   IF v_is_system_permission THEN
-    RETURN check_permission('system.rpc.invoke');
+    RETURN user_has_system_permission(p_user_id, 'system.rpc.invoke');
   END IF;
 
-  -- 6. If it's not a system permission, the user must have the standard 'insert' permission for role_permissions.
-  RETURN check_tenant_permission(v_tenant_id, 'db.role_permissions.insert');
+  -- 如果不是系统权限，用户必须具有role_permissions的insert权限
+  RETURN user_has_tenant_permission(p_user_id, v_tenant_id, 'db.role_permissions.insert');
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 检查当前用户是否可以授予特定权限给角色
+CREATE OR REPLACE FUNCTION can_grant_permission(p_role_id UUID, p_permission_id UUID)
+RETURNS BOOLEAN AS $$
+BEGIN
+  RETURN user_can_grant_permission(auth.uid(), p_role_id, p_permission_id);
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
@@ -461,6 +478,12 @@ INSERT INTO public.tenants (id, name, description) VALUES (get_system_tenant_id(
 INSERT INTO permissions (name, description) VALUES
   -- System-level permissions for admins
   ('system.rpc.invoke', 'permissions.system.rpc.invoke'),
+
+  ('db.auth.users.select', 'permissions.db.auth.users.select'),
+  ('db.auth.users.insert', 'permissions.db.auth.users.insert'),
+  ('db.auth.users.update', 'permissions.db.auth.users.update'),
+  ('db.auth.users.delete', 'permissions.db.auth.users.delete'),
+
   ('db.permissions.select', 'permissions.db.permissions.select'),
   ('db.permissions.insert', 'permissions.db.permissions.insert'),
   ('db.permissions.update', 'permissions.db.permissions.update'),
@@ -679,6 +702,9 @@ BEGIN
   DROP FUNCTION IF EXISTS check_permission(TEXT);
   DROP FUNCTION IF EXISTS can_grant_permission(UUID, UUID);
   DROP FUNCTION IF EXISTS check_tenant_permission(UUID, TEXT, BOOLEAN);
+  DROP FUNCTION IF EXISTS user_has_system_permission(UUID, TEXT);
+  DROP FUNCTION IF EXISTS user_has_tenant_permission(UUID, UUID, TEXT, BOOLEAN);
+  DROP FUNCTION IF EXISTS user_can_grant_permission(UUID, UUID, UUID);
   DROP FUNCTION IF EXISTS create_rls_policy(TEXT, TEXT, TEXT, TEXT);
   DROP FUNCTION IF EXISTS drop_rls_policy(TEXT, TEXT);
   DROP FUNCTION IF EXISTS add_updated_at_trigger(TEXT);
@@ -689,10 +715,7 @@ BEGIN
   DROP FUNCTION IF EXISTS promote_user_to_admin(UUID);
   DROP FUNCTION IF EXISTS get_system_tenant_id();
   DROP FUNCTION IF EXISTS sync_role_permissions_tenant_id();
-  DROP FUNCTION IF EXISTS can_grant_permission(UUID, TEXT);
   DROP FUNCTION IF EXISTS handle_updated_at();
-  DROP FUNCTION IF EXISTS check_permission(TEXT);
-  DROP FUNCTION IF EXISTS check_tenant_permission(UUID, TEXT);
   DROP FUNCTION IF EXISTS is_tenant_member(UUID);
   DROP FUNCTION IF EXISTS get_tenant_members(UUID);
   DROP FUNCTION IF EXISTS add_member_to_tenant_by_email(UUID, TEXT, UUID);

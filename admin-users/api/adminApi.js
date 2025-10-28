@@ -1,4 +1,15 @@
 import { supabase } from '@/framework/lib/supabase.js';
+import { FunctionsHttpError } from "@supabase/supabase-js";
+import { I18nError } from '@/framework/i18n/I18nError.js';
+
+async function handleAdminApiError(error) {
+  if (error instanceof FunctionsHttpError) {
+    const { error: errorMessage, ...params } = await error.context.json();
+    throw new I18nError(errorMessage, params);
+  } else if (error) {
+    throw error;
+  }
+}
 
 /**
  * Admin API 封装 - 通过 admin-universal-edge-function 进行安全的管理员操作
@@ -6,35 +17,54 @@ import { supabase } from '@/framework/lib/supabase.js';
  */
 
 /**
- * 调用 admin-universal-edge-function
- * @param {Object} payload - 请求负载
- * @param {string} payload.operation - 操作类型: 'select' | 'insert' | 'update' | 'delete'
+ * 调用认证管理 API
+ * @param {Object} payload - 请求参数
+ * @param {string} payload.operation - 操作类型: select, insert, update, delete
+ * @param {string} [payload.userId] - 用户ID (用于 select, update, delete)
+ * @param {Object} [payload.data] - 数据 (用于 insert, update)
+ * @param {Object} [payload.options] - 选项 (用于 select)
+ * @returns {Promise<any>}
+ * @description 返回的数据格式根据操作类型而异：
+ * - listUsers (select without userId): { users: Array, aud: string, nextPage: string|null, lastPage: number, total: number }
+ * - getUserById (select with userId): { user: Object }
+ * - 其他操作: 直接返回操作结果
+ */
+const callAdminApiUser = async (payload) => {
+  if (!supabase) {
+    throw new Error('Supabase client not initialized');
+  }
+
+  const { data, error } = await supabase.functions.invoke('admin-api-user', {
+    body: payload
+  });
+
+  await handleAdminApiError(error);
+
+  return data;
+};
+
+/**
+ * 调用通用管理 API
+ * @param {Object} payload - 请求参数
+ * @param {string} payload.operation - 操作类型: select, insert, update, delete
  * @param {string} payload.table - 表名
  * @param {Object} [payload.match] - 匹配条件
  * @param {Object|Array} [payload.data] - 数据
  * @param {string} [payload.columns] - 查询列，默认为 '*'
- * @returns {Promise<{data: any, error: any}>}
+ * @returns {Promise<any>}
  */
 const callAdminApi = async (payload) => {
-  try {
-    if (!supabase) {
-      throw new Error('Supabase client not initialized');
-    }
-
-    const { data, error } = await supabase.functions.invoke('admin-api-proxy', {
-      body: payload
-    });
-
-    if (error) {
-      console.error('Admin API Error:', error);
-      return { data: null, error };
-    }
-
-    return { data, error: null };
-  } catch (err) {
-    console.error('Admin API Call Failed:', err);
-    return { data: null, error: err };
+  if (!supabase) {
+    throw new Error('Supabase client not initialized');
   }
+
+  const { data, error } = await supabase.functions.invoke('admin-api-proxy', {
+    body: payload
+  });
+
+  await handleAdminApiError(error);
+
+  return data;
 };
 
 /**
@@ -43,37 +73,28 @@ const callAdminApi = async (payload) => {
 export const userAdminApi = {
   /**
    * 获取所有用户列表
-   * @returns {Promise<{data: Array, error: any}>}
+   * @param {Object} [options] - 查询选项
+   * @returns {Promise<{users: Array, aud: string, nextPage: string|null, lastPage: number, total: number}>}
+   * @description 返回的数据格式为 { users: [...], aud: "...", nextPage: null, lastPage: 1, total: 2 }
    */
-  async listUsers() {
-    // 注意：这里需要根据你的实际用户表结构调整
-    // 如果使用 auth.users 表，可能需要在 Edge Function 中特殊处理
-    return await callAdminApi({
+  async listUsers(options = {}) {
+    return await callAdminApiUser({
       operation: 'select',
-      table: 'auth.users',
-      columns: 'id,email,user_metadata,created_at,last_sign_in_at,email_confirmed_at'
+      options
     });
   },
 
   /**
    * 根据ID获取用户
    * @param {string} userId - 用户ID
-   * @returns {Promise<{data: Object, error: any}>}
+   * @returns {Promise<{user: Object}>}
+   * @description 返回的数据格式为 { user: {...} }
    */
   async getUserById(userId) {
-    const result = await callAdminApi({
+    return await callAdminApiUser({
       operation: 'select',
-      table: 'auth.users',
-      match: { id: userId },
-      columns: 'id,email,user_metadata,created_at,last_sign_in_at,email_confirmed_at'
+      userId
     });
-    
-    // 返回单个用户对象而不是数组
-    if (result.data && Array.isArray(result.data) && result.data.length > 0) {
-      return { data: result.data[0], error: result.error };
-    }
-    
-    return { data: null, error: result.error || new Error('User not found') };
   },
 
   /**
@@ -82,14 +103,12 @@ export const userAdminApi = {
    * @param {string} userData.email - 邮箱
    * @param {string} userData.password - 密码
    * @param {Object} [userData.user_metadata] - 用户元数据
-   * @returns {Promise<{data: Object, error: any}>}
+   * @param {boolean} [userData.email_confirm] - 是否需要确认邮箱
+   * @returns {Promise<Object>}
    */
   async createUser(userData) {
-    // 注意：创建用户可能需要在 Edge Function 中使用特殊的 admin 客户端
-    // 这里假设你的 Edge Function 已经处理了用户创建逻辑
-    return await callAdminApi({
+    return await callAdminApiUser({
       operation: 'insert',
-      table: 'auth.users',
       data: userData
     });
   },
@@ -98,13 +117,12 @@ export const userAdminApi = {
    * 更新用户信息
    * @param {string} userId - 用户ID
    * @param {Object} updateData - 更新数据
-   * @returns {Promise<{data: Object, error: any}>}
+   * @returns {Promise<Object>}
    */
   async updateUser(userId, updateData) {
-    return await callAdminApi({
+    return await callAdminApiUser({
       operation: 'update',
-      table: 'auth.users',
-      match: { id: userId },
+      userId,
       data: updateData
     });
   },
@@ -112,13 +130,12 @@ export const userAdminApi = {
   /**
    * 删除用户
    * @param {string} userId - 用户ID
-   * @returns {Promise<{data: any, error: any}>}
+   * @returns {Promise<any>}
    */
   async deleteUser(userId) {
-    return await callAdminApi({
+    return await callAdminApiUser({
       operation: 'delete',
-      table: 'auth.users',
-      match: { id: userId }
+      userId
     });
   },
 
@@ -126,13 +143,12 @@ export const userAdminApi = {
    * 更新用户状态
    * @param {string} userId - 用户ID
    * @param {Object} metadata - 要更新的元数据
-   * @returns {Promise<{data: Object, error: any}>}
+   * @returns {Promise<Object>}
    */
   async updateUserMetadata(userId, metadata) {
-    return await callAdminApi({
+    return await callAdminApiUser({
       operation: 'update',
-      table: 'auth.users',
-      match: { id: userId },
+      userId,
       data: { user_metadata: metadata }
     });
   }
@@ -147,7 +163,7 @@ export const adminApi = {
    * 通用查询
    * @param {string} table - 表名
    * @param {Object} [options] - 查询选项
-   * @returns {Promise<{data: Array, error: any}>}
+   * @returns {Promise<Array>}
    */
   async select(table, options = {}) {
     return await callAdminApi({
@@ -161,7 +177,7 @@ export const adminApi = {
    * 通用插入
    * @param {string} table - 表名
    * @param {Object|Array} data - 插入数据
-   * @returns {Promise<{data: Array, error: any}>}
+   * @returns {Promise<Array>}
    */
   async insert(table, data) {
     return await callAdminApi({
@@ -176,7 +192,7 @@ export const adminApi = {
    * @param {string} table - 表名
    * @param {Object} match - 匹配条件
    * @param {Object} data - 更新数据
-   * @returns {Promise<{data: Array, error: any}>}
+   * @returns {Promise<Array>}
    */
   async update(table, match, data) {
     return await callAdminApi({
@@ -191,7 +207,7 @@ export const adminApi = {
    * 通用删除
    * @param {string} table - 表名
    * @param {Object} match - 匹配条件
-   * @returns {Promise<{data: any, error: any}>}
+   * @returns {Promise<any>}
    */
   async delete(table, match) {
     return await callAdminApi({

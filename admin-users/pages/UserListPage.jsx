@@ -4,81 +4,62 @@ import { useTranslation } from 'react-i18next';
 import { userAdminApi } from '../api/adminApi';
 
 const UserListPage = () => {
-  const { t } = useTranslation(['user']);
+  const { t } = useTranslation(['admin-users']);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [filterRole, setFilterRole] = useState('');
 
   const fetchUsers = useCallback(async () => {
-    try {
-      setLoading(true);
-      const { data: fetchedUsers, error } = await userAdminApi.listUsers();
+    setLoading(true);
+    // 直接获取数据，无需处理错误，因为框架的顶层已有错误捕获并显示到 toast
+    const fetchedUsers = await userAdminApi.listUsers();
 
-      if (error) {
-        throw error;
-      }
+    // Supabase返回的数据格式为 { users: [...], aud: "...", nextPage: null, lastPage: 1, total: 2 }
+    // 我们需要从data.users中获取用户数组
+    const usersArray = fetchedUsers?.users || [];
 
-      const formattedUsers = fetchedUsers.map(user => ({
-        id: user.id,
-        name: user.user_metadata?.name || user.email.split('@')[0],
-        email: user.email,
-        role: user.user_metadata?.role || 'user',
-        status: user.email_confirmed_at ? 'active' : 'inactive',
-        createdAt: new Date(user.created_at).toLocaleDateString(),
-        lastLogin: user.last_sign_in_at ? new Date(user.last_sign_in_at).toLocaleString() : 'N/A',
-      }));
-      
-      setUsers(formattedUsers);
-    } catch (err) {
-      setError(t('fetchFailed'));
-      console.error('Error fetching users:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [t]);
+    const formattedUsers = usersArray.map(user => ({
+      id: user.id,
+      name: user.user_metadata?.name || user.email.split('@')[0],
+      email: user.email,
+      role: user.user_metadata?.role || 'user',
+      status: user.email_confirmed_at ? 'active' : 'inactive',
+      createdAt: new Date(user.created_at).toLocaleDateString(),
+      lastLogin: user.last_sign_in_at ? new Date(user.last_sign_in_at).toLocaleString() : 'N/A',
+    }));
+
+    setUsers(formattedUsers);
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
     fetchUsers();
   }, [fetchUsers]);
 
   const handleStatusToggle = async (userId, currentStatus) => {
-    try {
-      const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
-      const { error } = await userAdminApi.updateUserMetadata(
-        userId,
-        { status: newStatus }
-      );
+    const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
+    await userAdminApi.updateUserMetadata(
+      userId,
+      { status: newStatus }
+    );
 
-      if (error) throw error;
-
-      setUsers(users.map(user => 
-        user.id === userId ? { ...user, status: newStatus } : user
-      ));
-    } catch (err) {
-      setError('更新用户状态失败');
-      console.error('Error updating user status:', err);
-    }
+    setUsers(users.map(user =>
+      user.id === userId ? { ...user, status: newStatus } : user
+    ));
   };
 
   const handleDelete = async (id) => {
     if (window.confirm(t('confirmDelete'))) {
-      try {
-        const { error } = await userAdminApi.deleteUser(id);
-        if (error) throw error;
-        setUsers(users.filter(user => user.id !== id));
-      } catch (err) {
-        setError(t('deleteFailed'));
-        console.error('Error deleting user:', err);
-      }
+      await userAdminApi.deleteUser(id);
+      setUsers(users.filter(user => user.id !== id));
     }
   };
 
   // 过滤用户
   const filteredUsers = users.filter(user => {
     const matchesSearch = user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         user.email.toLowerCase().includes(searchTerm.toLowerCase());
+      user.email.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesRole = !filterRole || user.role === filterRole;
     return matchesSearch && matchesRole;
   });
@@ -98,7 +79,7 @@ const UserListPage = () => {
       {/* 页面标题和操作 */}
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-foreground">
-          {t('list')}
+          {t('title')}
         </h1>
         <Link
           to="/admin/users/create"
@@ -107,12 +88,6 @@ const UserListPage = () => {
           {t('create')}
         </Link>
       </div>
-
-      {error && (
-        <div className="bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700 text-red-700 dark:text-red-200 px-4 py-3 rounded">
-          {error}
-        </div>
-      )}
 
       {/* 搜索和过滤 */}
       <div className="bg-card text-card-foreground p-4 rounded-lg shadow">
@@ -159,11 +134,11 @@ const UserListPage = () => {
                   {t('status')}
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                   {t('lastLogin')}
-                 </th>
+                  {t('lastLogin')}
+                </th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                   {t('actions')}
-                 </th>
+                  {t('actions')}
+                </th>
               </tr>
             </thead>
             <tbody className="bg-card text-card-foreground divide-y divide-border">
@@ -187,22 +162,20 @@ const UserListPage = () => {
                     {user.email}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                      user.role === 'admin'
-                        ? 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200'
-                        : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
-                    }`}>
+                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${user.role === 'admin'
+                      ? 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200'
+                      : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
+                      }`}>
                       {user.role === 'admin' ? t('admin') : t('userRole')}
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <button
                       onClick={() => handleStatusToggle(user.id, user.status)}
-                      className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full cursor-pointer ${
-                        user.status === 'active'
-                          ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-                          : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
-                      }`}
+                      className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full cursor-pointer ${user.status === 'active'
+                        ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                        : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                        }`}
                     >
                       {user.status === 'active' ? t('active') : t('inactive')}
                     </button>
@@ -236,7 +209,7 @@ const UserListPage = () => {
       {filteredUsers.length === 0 && !loading && (
         <div className="text-center py-12">
           <div className="text-muted-foreground">
-            {searchTerm || filterRole ? '没有找到匹配的用户' : '暂无用户'}
+            {searchTerm || filterRole ? t('noMatchingUsers') : t('noUsers')}
           </div>
           {!searchTerm && !filterRole && (
             <Link
